@@ -1,0 +1,160 @@
+buildscript {
+    repositories {
+		maven {
+            url "https://na.artifactory.swg-devops.com/artifactory/wh-imaging-external-maven-virtual"
+            credentials {
+                username = "${taasArtifactoryUsername}"
+                password = "${taasArtifactoryPassword}"
+            }
+            metadataSources {
+                mavenPom()
+                artifact()
+            }
+        }
+	}
+}
+
+plugins {
+    id "ru.vyarus.use-python" version "2.2.0"
+    id "org.sonarqube" version "3.0"
+}
+
+group = 'com.ibm.watson.health.cdp'
+version = "0.0.1"
+description = """Patient Management Service"""
+
+sonarqube {
+    properties {
+        property "sonar.sources", pySrcDir
+        property "sonar.tests", pyTestDir
+        property "sonar.python.coverage.reportPaths", pyXmlCoveragePath
+        property "sonar.python.xunit.reportPath", pyTestReportPath
+    }
+}
+
+// --------
+//Whi CAF Python Build Section
+python {
+    pip 'pydantic:1.8.2'
+    pip 'fastapi:0.63.0'
+    pip 'whpa-cdp-minio-python-client:0.0.1'
+    pip 'whi-caf-lib-configreader:3.1.0'
+    pip 'fhir.resources:6.1.0'
+    pip 'deepmerge:0.3.0'
+    pip 'deepdiff:5.5.0'
+    pip 'whpa-cdp-lib-postgres:0.0.1'
+    //Python dependencies end
+
+    // Change to ./opt/... on Windows OS and not /opt/...
+    envPath = 'build/venv'
+}
+
+
+task cdpPatientManagementServiceSetupBuild(type: PythonTask) {
+    module = 'pip'
+    extraArgs = ['install', 'pytest==5.4.0', 'pytest-cov==2.7.1', 'twine==1.14.0', 'flake8==3.7.8', 'black==19.10b0', 'asynctest==0.13.0', 'pytest-asyncio==0.15.1', 'pytest-mock==3.6.1']
+}
+
+task cdpPatientManagementServiceGenerateReqs {
+    doLast {
+        def newFile = new File("${project.projectDir}/pinned.txt")
+        newFile.delete()
+        newFile.createNewFile()
+        python.modules.each { module ->
+            newFile.append(module.replace(":", "==") + "\n")
+        }
+    }
+}
+
+task cdpPatientManagementServiceSetupBuildProperties {
+    doLast {
+        def newFile = new File("${project.projectDir}/setup.properties")
+        newFile.delete()
+        newFile.createNewFile()
+        newFile.append("[default]")
+        newFile.append("\nproject_name=${project.name}")
+        newFile.append("\nproject_version=${project.version}")
+        newFile.append("\nproject_srcDir=${pySrcDir}")
+    }
+}
+
+task cdpPatientManagementServiceBuildWheel(type: PythonTask) {
+    command = 'setup.py'
+    extraArgs = ['bdist_wheel', '-d', pyDistDir, '-k']
+}
+
+task cdpPatientManagementServiceTestPrep(type: PythonTask) {
+    command = 'setup.py'
+    extraArgs = ['develop']
+}
+
+task cdpPatientManagementServiceTest(type: PythonTask) {
+    module = 'pytest'
+    extraArgs = [pyTestDir, '--junitxml='+pyTestReportPath, '-v']
+}
+
+task cdpPatientManagementServiceCoverage(type: PythonTask) {
+    module = 'pytest'
+    extraArgs = [pyTestDir, '--cov', pySrcDir, '--cov-report=xml:'+pyXmlCoveragePath, '--cov-report=html:'+pyHtmlCoveragePath, '--cov-report=term']
+}
+
+task cdpPatientManagementServiceClean {
+    doLast {
+        exec {
+            commandLine 'rm', '-rf', 'build'
+        }
+    }
+}
+
+task cdpPatientManagementServicePublishArtifacts(type: PythonTask) {
+    doFirst {
+        def taasArtifactoryUsername = "${taasArtifactoryUsername}"
+        def taasArtifactoryPassword = "${taasArtifactoryPassword}"
+        module = 'twine'
+        extraArgs = ['upload', '--repository-url', whiPypiRepositoryUrl, '-u', taasArtifactoryUsername, '-p', taasArtifactoryPassword, pyDistDir+'/*.whl']
+    }
+}
+
+task cdpPatientManagementServiceFlake8(type: PythonTask) {
+    module = 'flake8'
+    extraArgs = [pySrcDir]
+}
+
+task cdpPatientManagementServiceBlack(type: PythonTask) {
+    module = 'black'
+    extraArgs = [pySrcDir]
+}
+
+task dockerBuild(type: Exec) {
+    // Changed from 'py-service-wrapper-build-utils:latest' to ubi py wrapper.
+    commandLine 'docker', 'run', '-v', System.getProperty("user.dir")+':/tmp/project', '-v','/var/run/docker.sock:/var/run/docker.sock','-e','PROJECT_ROOT=/tmp/project', '-e' ,'PROJECT_DIST='+pyDistDir+'/*.whl', '-e', 'PROJECT_YAML=project.yaml' ,'-e','IMAGE_NAME=whpa-cdp-patient-management-service:0.0.1', 'wh-imaging-cdp-docker-local.artifactory.swg-devops.com/ubi8/whpa-cdp-ubi8-py-service-wrapper-build-util:1.0.0'
+}
+
+task build {}
+task test {}
+task coverage {}
+task uploadArchives {}
+task flake8 {}
+task clean {}
+task black {}
+
+project.tasks.cdpPatientManagementServiceTest.dependsOn project.tasks.cdpPatientManagementServiceSetupBuild
+project.tasks.cdpPatientManagementServiceTest.dependsOn project.tasks.cdpPatientManagementServiceTestPrep
+project.tasks.cdpPatientManagementServiceTestPrep.dependsOn project.tasks.cdpPatientManagementServiceSetupBuildProperties
+project.tasks.cdpPatientManagementServiceCoverage.dependsOn project.tasks.cdpPatientManagementServiceSetupBuild
+project.tasks.cdpPatientManagementServiceCoverage.dependsOn project.tasks.cdpPatientManagementServiceTestPrep
+project.tasks.cdpPatientManagementServicePublishArtifacts.dependsOn project.tasks.cdpPatientManagementServiceSetupBuild
+project.tasks.cdpPatientManagementServiceFlake8.dependsOn project.tasks.cdpPatientManagementServiceSetupBuild
+
+project.tasks.build.dependsOn project.tasks.cdpPatientManagementServiceSetupBuild
+project.tasks.build.dependsOn project.tasks.cdpPatientManagementServiceSetupBuildProperties
+project.tasks.build.dependsOn project.tasks.cdpPatientManagementServiceGenerateReqs
+project.tasks.build.dependsOn project.tasks.cdpPatientManagementServiceTest
+project.tasks.build.finalizedBy project.tasks.cdpPatientManagementServiceBuildWheel
+
+project.tasks.test.finalizedBy project.tasks.cdpPatientManagementServiceTest
+project.tasks.coverage.finalizedBy project.tasks.cdpPatientManagementServiceCoverage
+project.tasks.clean.finalizedBy project.tasks.cdpPatientManagementServiceClean
+project.tasks.uploadArchives.finalizedBy project.tasks.cdpPatientManagementServicePublishArtifacts
+project.tasks.flake8.finalizedBy project.tasks.cdpPatientManagementServiceFlake8
+project.tasks.black.finalizedBy project.tasks.cdpPatientManagementServiceBlack

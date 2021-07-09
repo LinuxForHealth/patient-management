@@ -1,0 +1,43 @@
+{
+	"primaryPatientResourceId": "11",
+	"primaryPatientResourceEntry": {
+		"fullUrl": "urn:id:11",
+		"resource": {
+			"resourceType": "Patient",
+			"id": "11",
+			"identifier": [
+				{
+					"type": {
+						"coding": [
+							{
+								"system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+								"code": "MR",
+								"display": "Medical record number"
+							}
+						],
+						"text": "MR"
+					},
+					"value": "PID1234",
+					"assigner": {
+						"reference": "Organization/A"
+					}
+				}
+			],
+			"active": true,
+			"name": [
+				{
+					"family": "Baron",
+					"given": [
+						"Elena",
+						"V"
+					]
+				}
+			],
+			"gender": "female"
+		},
+		"request": {
+			"method": "PUT",
+			"url": "Patient/11"
+		}
+	}
+}

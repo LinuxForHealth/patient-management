@@ -1,0 +1,18 @@
+version: 1
+project:
+  name: patientManagementService
+  version: 1
+  module: cdp_patient_mgmt.rest.endpoints_module
+  entrypoints:
+    - name: ep1
+      entrypoint: ping
+      path: ping
+      methods:
+        - GET
+    - name: ep2
+      entrypoint: patient_bundle
+      path: Patient/batch/{patbatch_storage_id}
+      methods:
+        - GET
+      headers:
+        - tenant_id
